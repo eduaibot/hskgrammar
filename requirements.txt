@@ -2,3 +2,4 @@ streamlit
 google-generativeai
 extra-streamlit-components
 gTTS
+dotenv
