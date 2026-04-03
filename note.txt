@@ -1,0 +1,7 @@
+hsk_app/
+├── .env                # Lưu GEMINI_API_KEY
+├── app.py              # Entry point (Main UI)
+├── grammar_db.py       # Danh sách ngữ pháp HSK 1-6
+├── database.py         # Xử lý SQLite (User, Lịch sử, Resume)
+├── ai_engine.py        # Tích hợp Gemini API & TTS
+└── styles.py           # Custom CSS (Glassmorphism)
