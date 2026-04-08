@@ -276,29 +276,118 @@ elif mode == "Thi Thử AI":
             st.session_state.exam_running = False
             st.rerun()
 
-        with st.form("hsk_exam_form"):
-            # --- PHẦN ĐỌC ---
-            if read_qs:
-                st.write("### I. PHẦN ĐỌC (阅读)")
-                for i, q in enumerate(read_qs):
-                    st.write(f"**Câu {i+1}:** {q.get('question', '')}")
-                    if q.get('options'):
-                        for opt in q['options']: st.write(opt)
-                    st.session_state.user_answers[f"R_{i}"] = st.text_input("Đáp án của bạn:", key=f"in_R_{i}")
+        # --- BIẾN ĐIỀU KHIỂN TRẠNG THÁI ---
+        if 'submitted' not in st.session_state:
+            st.session_state.submitted = False
 
-            # --- PHẦN VIẾT ---
-            if write_qs:
-                st.write("---")
-                st.write("### II. PHẦN VIẾT (书写)")
-                for i, q in enumerate(write_qs):
-                    st.write(f"**Câu {i+1}:** {q.get('question', '')}")
-                    st.session_state.user_answers[f"W_{i}"] = st.text_area("Trả lời:", key=f"in_W_{i}")
-
-            if st.form_submit_button("🏁 NỘP BÀI", type="primary", use_container_width=True):
-                st.session_state.submitted = True
+        # --- HIỂN THỊ TỔNG ĐIỂM (CHỈ HIỆN KHI ĐÃ NỘP BÀI) ---
+        if st.session_state.submitted:
+            total_q = len(read_qs) + len(write_qs)
+            score = st.session_state.user_score
+            st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border: 2px solid #ff4b4b;">
+                    <h1 style="margin:0; color: #ff4b4b;">🎯 TỔNG ĐIỂM: {score} / {total_q}</h1>
+                    <p style="font-size: 18px;">({round(score/total_q*100, 1)}% hoàn thành)</p>
+                </div>
+            """, unsafe_allow_html=True)
+            if st.button("🔄 Làm đề mới"):
+                st.session_state.submitted = False
                 st.session_state.exam_running = False
                 st.rerun()
+            st.divider()
 
+        # --- HIỂN THỊ NỘI DUNG ĐỀ / BÀI CHẤM ---
+        with st.form("hsk_exam_form"):
+            # --- I. PHẦN ĐỌC HIỂU ---
+            if read_qs:
+                st.write("### I. PHẦN ĐỌC HIỂU")
+                for i, q in enumerate(read_qs):
+                    st.markdown(f"**Câu {i+1}:**")
+                    u_ans = st.session_state.user_answers.get(f"R_{i}", "").strip()
+                    correct_ans = str(q.get('answer', '')).strip()
+                    
+                    # Hiển thị câu hỏi (Trắc nghiệm/Điền từ/Sắp xếp)
+                    if q.get('type') == 'fill_blank':
+                        st.write(f"Từ gợi ý: {', '.join(q.get('words', []))}")
+                        st.write(f"Câu hỏi: {q['question']}")
+                    elif q.get('type') == 'order':
+                        for opt in q['options']: st.write(opt)
+                    elif q.get('type') == 'choice':
+                        st.write(q.get('passage', ''))
+                        st.write(f"★ {q.get('question', '')}")
+                        if not st.session_state.submitted:
+                            options = q['options']
+                            default_idx = options.index(u_ans) if u_ans in options else None
+                            u_ans = st.radio(f"Chọn đáp án câu {i+1}:", options, index=default_idx, key=f"r_radio_{i}")
+                    
+                    # Nếu chưa nộp: hiện ô nhập liệu
+                    if not st.session_state.submitted and q.get('type') != 'choice':
+                        u_ans = st.text_input("Đáp án của bạn:", value=u_ans, key=f"r_input_{i}")
+                        st.session_state.user_answers[f"R_{i}"] = u_ans
+
+                    # NẾU ĐÃ NỘP BÀI: HIỆN ĐÁP ÁN & GIẢI THÍCH
+                    if st.session_state.submitted:
+                        is_correct = (u_ans.lower() == correct_ans.lower())
+                        color = "#28a745" if is_correct else "#dc3545" # Màu xanh / đỏ
+                        
+                        # 1. Hiển thị thông báo đúng/sai
+                        st.markdown(f"**Kết quả:** <span style='color:{color}; font-weight:bold;'>{'✅ Đúng' if is_correct else '❌ Sai'}</span>", unsafe_allow_html=True)
+                        
+                        # 2. Nếu là điền từ, hiển thị câu đã điền hoàn chỉnh (đã có dấu ** từ AI)
+                        if q.get('type') == 'fill_blank' and q.get('full_sentence'):
+                            st.markdown(f"👉 **Câu hoàn chỉnh:** {q['full_sentence']}")
+                        else:
+                            st.markdown(f"👉 **Đáp án đúng:** `{correct_ans}`")
+
+                        # 3. Hiển thị Pinyin và Nghĩa với style dễ nhìn
+                        st.info(f"""
+                        📖 **Pinyin:** {q.get('pinyin', '')}
+                        🇻🇳 **Dịch nghĩa:** {q.get('translation', '')}
+                        💡 **Giải thích:** {q.get('explanation_vn', '')}
+                        """)
+
+            # --- II. PHẦN VIẾT ---
+            if write_qs:
+                st.write("### II. PHẦN VIẾT")
+                for i, q in enumerate(write_qs):
+                    st.write(f"**Câu {i+1}:** {' '.join(q.get('shuffled_words', []))}")
+                    u_ans = st.session_state.user_answers.get(f"W_{i}", "").strip()
+                    correct_ans = q.get('answer', '').strip()
+
+                    if not st.session_state.submitted:
+                        u_ans = st.text_input("Viết lại câu hoàn chỉnh:", value=u_ans, key=f"w_input_{i}")
+                        st.session_state.user_answers[f"W_{i}"] = u_ans
+
+                    if st.session_state.submitted:
+                        is_correct = (u_ans.replace(" ","") == correct_ans.replace(" ",""))
+                        color = "green" if is_correct else "red"
+                        st.markdown(f"**Kết quả:** <span style='color:{color}'>{'✅' if is_correct else '❌'}</span>", unsafe_allow_html=True)
+                        st.write(f"**👉 Đáp án đúng:** {correct_ans}")
+                        with st.expander("Dịch nghĩa & Pinyin"):
+                            st.write(f"📖 **Pinyin:** {q.get('pinyin', '')}")
+                            st.write(f"🇻🇳 **Dịch:** {q.get('translation', '')}")
+                        st.divider()
+
+            # Nút bấm chính
+            if not st.session_state.submitted:
+                if st.form_submit_button("NỘP BÀI CHẤM ĐIỂM", type="primary", use_container_width=True):
+                    # TÍNH ĐIỂM
+                    score = 0
+                    # Chấm phần Đọc
+                    for i, q in enumerate(read_qs):
+                        ans = st.session_state.user_answers.get(f"R_{i}", "").strip().lower()
+                        if ans == str(q.get('answer', '')).strip().lower():
+                            score += 1
+                    # Chấm phần Viết
+                    for i, q in enumerate(write_qs):
+                        ans = st.session_state.user_answers.get(f"W_{i}", "").strip().replace(" ","")
+                        if ans == q.get('answer', '').strip().replace(" ",""):
+                            score += 1
+                    
+                    st.session_state.user_score = score
+                    st.session_state.submitted = True
+                    # Tự động cuộn lên đầu bằng cách rerun
+                    st.rerun()
     # 3. GIAO DIỆN CHẤM ĐIỂM
     if st.session_state.get('submitted'):
         exam = st.session_state.exam_data

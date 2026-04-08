@@ -51,56 +51,105 @@ def get_grammar_practice(hsk_level, grammar_title):
     except:
         return []
     
-def generate_full_exam(level, difficulty):
-    prompt = f"""
-    Đóng vai trò là một chuyên gia ra đề thi HSK. Hãy tạo một đề thi thử HSK cấp độ {level}, độ khó {difficulty}.
-    Số lượng: 5 câu Nghe, 40 câu Đọc, 15 câu Viết (nhớ phải tạo đủ số câu), thoải mái suy nghĩ k vấn đề thời gian bao giờ đủ số câu như này thì ok
-    Đọc Gồm 3 phần nhỏ (Điền từ, Nối câu, Chọn đáp án đúng).
-    Viết Gồm 2 phần nhỏ (Sắp xếp câu).
-
-    YÊU CẦU JSON:
-    {{
-      "level": {level},
-      "listening": [
-        {{
-          "text": "Câu tiếng Trung để phát âm thanh",
-          "options": ["A. ...", "B. ...", "C. ..."],
-          "answer": "A",
-          "explanation_vn": "Giải thích ngắn bằng tiếng Việt tại sao chọn A",
-          "points": 2.5
-        }}
-      ],
-      "reading": [
-        {{
-          "question": "Câu hỏi/Đoạn văn Hán tự",
-          "options": ["A. ...", "B. ...", "C. ..."],
-          "answer": "B",
-          "pinyin": "Phiên âm pinyin cho câu hỏi",
-          "translation": "Dịch nghĩa tiếng Việt",
-          "points": 2.5
-        }}
-      ],
-      "writing": [
-        {{
-          "question": "Các từ xáo trộn hoặc câu hỏi viết",
-          "answer": "Câu hoàn chỉnh đúng Hán tự",
-          "pinyin": "Phiên âm của câu đáp án",
-          "translation": "Dịch nghĩa của câu đáp án",
-          "points": 100/15
-        }}
-      ]
-    }}
-    LƯU Ý: Trả về duy nhất JSON. Không có văn bản thừa.
-    """
+def call_gemini_part(prompt_part):
     try:
-        response = model.generate_content(prompt)
-        cleaned_json = clean_json_string(response.text.strip())
-        data = json.loads(cleaned_json)
-        return data
+        response = model.generate_content(prompt_part)
+        cleaned = clean_json_string(response.text.strip())
+        data = json.loads(cleaned)
+        return data if isinstance(data, list) else [data]
     except Exception as e:
-        st.error(f"Lỗi tạo đề: {e}")
-        return {"listening": [], "reading": [], "writing": []}
-    
+        print(f"Lỗi khi tải một phần đề thi: {e}")
+        return []
+
+def generate_full_exam(level, difficulty):
+    full_exam = {"listening": [], "reading": [], "writing": []}
+    total_batches = 11 
+    current_batch = 0
+    progress_bar = st.progress(0, text="Bắt đầu khởi tạo AI...")
+
+    def update_progress(task_name):
+        nonlocal current_batch
+        current_batch += 1
+        percent = min(current_batch / total_batches, 1.0)
+        progress_bar.progress(percent, text=f"Đang soạn đề: {task_name} (Tiến độ: {current_batch}/{total_batches})")
+
+    # --- PHẦN 1: ĐIỀN TỪ CÂU ĐƠN (5 CÂU) ---
+    p_read_1 = f"""Tạo ĐÚNG 5 CÂU Đọc HSK {level}2.0 - Điền từ câu đơn. 
+    Yêu cầu JSON: [{{
+        "type": "fill_blank",
+        "words": ["A","B","C","D","E","F"],
+        "question": "Tôi muốn ___ cơm.",
+        "answer": "ăn",
+        "full_sentence": "Tôi muốn **ăn** cơm.",
+        "pinyin": "Wǒ xiǎng chī fàn.",
+        "translation": "Tôi muốn ăn cơm.",
+        "explanation_vn": "Từ 'ăn' (chī) là động từ phù hợp với ngữ cảnh dùng bữa."
+    }}]"""
+    full_exam["reading"].extend(call_gemini_part(p_read_1))
+    update_progress("Đọc - Điền từ câu đơn")
+
+    # --- PHẦN 2: ĐIỀN TỪ HỘI THOẠI (5 CÂU) ---
+    p_read_2 = f"""Tạo ĐÚNG 5 CÂU Đọc HSK {level}2.0 - Điền từ hội thoại A-B. 
+    Yêu cầu JSON: [{{
+        "type": "fill_blank",
+        "words": ["A","B","C","D","E","F"],
+        "question": "A: Bạn khỏe không? \\n B: Tôi ___ khỏe.",
+        "answer": "rất",
+        "full_sentence": "A: Bạn khỏe không? \\n B: Tôi **rất** khỏe.",
+        "pinyin": "Wǒ hěn hǎo.",
+        "translation": "Tôi rất khỏe.",
+        "explanation_vn": "Phó từ 'rất' bổ nghĩa cho tính từ 'khỏe'."
+    }}]"""
+    full_exam["reading"].extend(call_gemini_part(p_read_2))
+    update_progress("Đọc - Điền từ hội thoại")
+
+    # --- PHẦN 3: SẮP XẾP THỨ TỰ A-B-C (10 CÂU) ---
+    for i in range(2):
+        p_read_3 = f"""Tạo ĐÚNG 5 CÂU sắp xếp A, B, C (HSK {level}2.0). 
+        Yêu cầu JSON: [{{
+            "type": "order",
+            "options": ["A. ...", "B. ...", "C. ..."],
+            "answer": "BCA",
+            "pinyin": "Phiên âm của cả đoạn sau khi sắp xếp",
+            "translation": "Nghĩa của cả đoạn",
+            "explanation_vn": "Giải thích logic liên kết giữa các câu."
+        }}]"""
+        full_exam["reading"].extend(call_gemini_part(p_read_3))
+        update_progress(f"Đọc - Sắp xếp đoạn văn {i+1}")
+
+    # --- PHẦN 4: TRẮC NGHIỆM ĐOẠN VĂN (20 CÂU) ---
+    for i in range(4):
+        p_read_4 = f"""Tạo ĐÚNG 5 CÂU trắc nghiệm trích đoạn HSK {level}2.0. 
+        Yêu cầu JSON: [{{
+            "type": "choice",
+            "passage": "...",
+            "question": "★ ...",
+            "options": ["A...","B...","C...","D..."],
+            "answer": "A",
+            "pinyin": "Phiên âm đoạn văn",
+            "translation": "Dịch đoạn văn và câu hỏi",
+            "explanation_vn": "Tại sao đáp án đó đúng dựa trên văn bản."
+        }}]"""
+        full_exam["reading"].extend(call_gemini_part(p_read_4))
+        update_progress(f"Đọc - Trắc nghiệm {i+1}")
+
+    # --- PHẦN 5: VIẾT - SẮP XẾP TỪ (15 CÂU) ---
+    for i in range(3):
+        p_write = f"""Tạo ĐÚNG 5 CÂU Viết HSK {level} - Sắp xếp từ2.0. 
+        Ví dụ: (有) (了) (800 年的) -> 800 年的有了... 
+        Yêu cầu JSON: [{{
+            "shuffled_words": ["(词语1)", "(词语2)"],
+            "answer": "Câu hoàn chỉnh",
+            "pinyin": "Phiên âm",
+            "translation": "Dịch nghĩa",
+            "explanation_vn": "Giải thích cấu trúc ngữ pháp (Vd: S + V + O)."
+        }}]"""
+        full_exam["writing"].extend(call_gemini_part(p_write))
+        update_progress(f"Viết - Sắp xếp câu {i+1}")
+
+    progress_bar.empty() 
+    return full_exam
+  
 def ai_give_feedback(level, score, max_score, wrong_answers):
     # Nếu làm đúng hết
     if not wrong_answers:
